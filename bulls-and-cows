@@ -1,0 +1,78 @@
+#!/bin/bash
+
+if [[ "${BASH_VERSINFO[0]}${BASH_VERSINFO[1]}" -lt 52 ]]; then
+    echo "Ошибка: Требуется Bash версии 5.2 или выше."
+    exit 1
+fi
+
+function generate_number() {
+    digits=($(shuf -i 0-9 -n 10))
+    echo "${digits[0]}${digits[1]}${digits[2]}${digits[3]}"
+}
+
+function count_bulls_and_cows() {
+    local guess="$1"
+    local bulls=0
+    local cows=0
+
+    for i in {0..3}; do
+        if [[ "${guess:$i:1}" == "${secret_number:$i:1}" ]]; then
+            ((bulls++))
+        elif [[ "$secret_number" == *"${guess:$i:1}"* ]]; then
+            ((cows++))
+        fi
+    done
+    echo "$bulls $cows"
+}
+
+trap 'echo "\nЧтобы выйти, введите q или Q."' SIGINT
+
+secret_number=$(generate_number)
+turn=1
+history=()
+
+clear
+echo "********************************************************************************"
+echo "* Я загадал 4-значное число с неповторяющимися цифрами. На каждом ходу делайте *"
+echo "* попытку отгадать загаданное число. Попытка - это 4-значное число с           *"
+echo "* неповторяющимися цифрами.                                                    *"
+echo "********************************************************************************"
+echo
+
+while true; do
+    echo -n "Попытка $turn: "
+    read input
+
+    if [[ "$input" == "q" || "$input" == "Q" ]]; then
+        echo "Выход из игры."
+        exit 1
+    fi
+
+    if ! [[ "$input" =~ ^[0-9]{4}$ ]]; then
+        echo "Ошибка: Введите 4-значное число с неповторяющимися цифрами."
+        continue
+    fi
+    if [[ "${input:0:1}" == "${input:1:1}" || "${input:0:1}" == "${input:2:1}" || "${input:0:1}" == "${input:3:1}" || 
+          "${input:1:1}" == "${input:2:1}" || "${input:1:1}" == "${input:3:1}" || 
+          "${input:2:1}" == "${input:3:1}" ]]; then
+        echo "Ошибка: Число должно содержать только уникальные цифры."
+        continue
+    fi
+
+    read bulls cows < <(count_bulls_and_cows "$input")
+    echo "Коров - $cows, Быков - $bulls"
+    history+=("$turn. $input (Коров - $cows Быков - $bulls)")
+
+    echo -e "\nИстория ходов:"
+    for record in "${history[@]}"; do
+        echo "$record"
+    done
+
+    if [[ "$bulls" -eq 4 ]]; then
+        echo "Поздравляем! Вы угадали число: $secret_number"
+        exit 0
+    fi
+
+    ((turn++))
+
+done

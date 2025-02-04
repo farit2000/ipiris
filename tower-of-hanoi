@@ -1,0 +1,103 @@
+#!/bin/bash
+
+if [[ "${BASH_VERSINFO[0]}${BASH_VERSINFO[1]}" -lt 52 ]]; then
+    echo "Ошибка: Требуется Bash версии 5.2 или выше."
+    exit 1
+fi
+
+declare -a A=(8 7 6 5 4 3 2 1)
+declare -a B=()
+declare -a C=()
+
+move_count=0
+
+display_stacks() {
+    echo "Ход № $move_count (откуда, куда):"
+    for i in {7..0}; do
+        printf "|%s|  |%s|  |%s|\n" "${A[$i]:- }" "${B[$i]:- }" "${C[$i]:- }"
+    done
+    echo "+-+  +-+  +-+"
+    echo " A    B    C"
+    echo
+}
+
+check_win() {
+    if [[ "${B[*]}" == "8 7 6 5 4 3 2 1" || "${C[*]}" == "8 7 6 5 4 3 2 1" ]]; then
+        echo "Поздравляем! Вы выиграли!"
+        exit 0
+    fi
+}
+
+move_disk() {
+    local from_stack=$1
+    local to_stack=$2
+
+    case $from_stack in
+        A) from=("${A[@]}") ;;
+        B) from=("${B[@]}") ;;
+        C) from=("${C[@]}") ;;
+        *) echo "Ошибка: неверный стек-отправитель."; return 1 ;;
+    esac
+
+    case $to_stack in
+        A) to=("${A[@]}") ;;
+        B) to=("${B[@]}") ;;
+        C) to=("${C[@]}") ;;
+        *) echo "Ошибка: неверный стек-получатель."; return 1 ;;
+    esac
+
+    if [[ ${#from[@]} -eq 0 ]]; then
+        echo "Ошибка: стек-отправитель пуст."
+        return 1
+    fi
+
+    local top_from=${from[-1]}
+
+    if [[ ${#to[@]} -gt 0 && ${to[-1]} -lt $top_from ]]; then
+        echo "Такое перемещение запрещено!"
+        return 1
+    fi
+
+    to+=($top_from)
+    unset from[-1]
+
+    case $from_stack in
+        A) A=("${from[@]}") ;;
+        B) B=("${from[@]}") ;;
+        C) C=("${from[@]}") ;;
+    esac
+
+    case $to_stack in
+        A) A=("${to[@]}") ;;
+        B) B=("${to[@]}") ;;
+        C) C=("${to[@]}") ;;
+    esac
+
+    return 0
+}
+
+trap 'echo "Для завершения работы введите q или Q."' SIGINT
+
+while true; do
+    display_stacks
+
+    read -p "Ход № $((move_count + 1)) (откуда, куда): " input
+
+    if [[ $input =~ ^[qQ]$ ]]; then
+        exit 1
+    fi
+
+    input=$(echo "$input" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+
+    if [[ $input =~ ^[A-C][A-C]$ ]]; then
+        from_stack=${input:0:1}
+        to_stack=${input:1:1}
+
+        if move_disk "$from_stack" "$to_stack"; then
+            move_count=$((move_count + 1))
+            check_win
+        fi
+    else
+        echo "Ошибка: введите два имени стека (например, AB) или q для выхода."
+    fi
+done

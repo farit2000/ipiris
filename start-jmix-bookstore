@@ -1,0 +1,75 @@
+#!/bin/bash
+
+if [[ "${BASH_VERSINFO[0]}${BASH_VERSINFO[1]}" -lt 52 ]]; then
+    echo "Ошибка: Требуется Bash версии 5.2 или выше."
+    exit 1
+fi
+
+if ! command -v yc &> /dev/null
+then
+    echo "Yandex Cloud CLI не установлен. Пожалуйста, установите его и настройте."
+    exit
+fi
+
+NETWORK_NAME="bookstore-network"
+SUBNET_NAME="bookstore-subnet"
+yc vpc network create --name $NETWORK_NAME
+NETWORK_ID=$(yc vpc network get $NETWORK_NAME --format json | jq -r '.id')
+
+yc vpc subnet create --name $SUBNET_NAME --network-id $NETWORK_ID --range "192.168.1.0/24" --zone "ru-central1-a"
+
+SSH_KEY_PATH="$HOME/.ssh/id_rsa_bookstore"
+ssh-keygen -t rsa -b 2048 -f $SSH_KEY_PATH -N ""
+
+VM_NAME="bookstore-vm"
+IMAGE_ID="fd86idv7gmqapoeiq5ld"  # Указываем конкретный image-id
+yc compute instance create \
+  --name $VM_NAME \
+  --zone ru-central1-a \
+  --platform standard-v3 \
+  --cores 2 \
+  --memory 4GB \
+  --create-boot-disk size=20,type=network-ssd,image-id=$IMAGE_ID \
+  --network-interface subnet-name=$SUBNET_NAME,nat-ip-version=ipv4 \
+  --ssh-key $SSH_KEY_PATH.pub
+
+PUBLIC_IP=$(yc compute instance get $VM_NAME --format json | jq -r '.network_interfaces[0].primary_v4_address.one_to_one_nat.address')
+
+echo "Ожидание завершения загрузки виртуальной машины..."
+sleep 120
+
+echo "Проверка доступности SSH на $PUBLIC_IP..."
+until nc -z -v -w5 $PUBLIC_IP 22; do
+    echo "Ожидание доступности SSH..."
+    sleep 10
+done
+
+ssh-keygen -f "/home/farit/.ssh/known_hosts" -R "$PUBLIC_IP"
+
+ssh -T -o StrictHostKeyChecking=no -i $SSH_KEY_PATH yc-user@$PUBLIC_IP << 'EOF'
+# Удаление файла /var/run/nologin, если он существует
+sudo rm -f /var/run/nologin
+
+# Создание пользователя `ipiris`
+sudo useradd -m -s /bin/bash ipiris
+sudo mkdir -p /home/ipiris/.ssh
+sudo cp /home/yc-user/.ssh/authorized_keys /home/ipiris/.ssh/
+sudo chown -R ipiris:ipiris /home/ipiris/.ssh
+sudo chmod 700 /home/ipiris/.ssh
+sudo chmod 600 /home/ipiris/.ssh/authorized_keys
+
+# Настройка sudo без пароля для пользователя `ipiris`
+echo "ipiris ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/ipiris
+sudo chmod 440 /etc/sudoers.d/ipiris
+EOF
+
+ssh -T -i $SSH_KEY_PATH ipiris@$PUBLIC_IP << 'EOF'
+sudo apt-get update
+sudo apt-get install -y docker.io
+sudo docker run -d -p 80:8080 --name bookstore jmix/jmix-bookstore
+EOF
+
+echo "Для подключения к серверу используйте:"
+echo "ssh -i $SSH_KEY_PATH ipiris@$PUBLIC_IP"
+echo "Веб-приложение доступно по адресу:"
+echo "http://$PUBLIC_IP"

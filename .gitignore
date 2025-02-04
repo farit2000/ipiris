@@ -1,0 +1,21 @@
+*.tfstate
+*.tfstate.backup
+
+# Файлы журналов
+*.log
+
+# Скрытые файлы и папки
+/.terraform/
+*.terraform/
+
+# Запланированные изменения
+terraform.tfplan
+
+# Локально созданные файлы
+crash.log
+override.tf
+override.tf.json
+meta.txt
+.terraform.lock.hcl
+terraform.tfvars
+*id_rsa*
